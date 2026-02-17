@@ -111,9 +111,16 @@ with onglet_actif[0]:
             st.error("⚠️ Impossible de lire les données. La photo est trop floue ou mal cadrée.")
             st.stop()
                 
-                # 3. Validation Nom et Chiffres
+               # 3. Validation Nom et Chiffres (Sécurisée)
+        match_nom = False
+        match_chiffres = False
+        
+        if tous_les_textes.strip():
+            if nom_complet:
                 match_nom = nom_complet in tous_les_textes
+            if last_4:
                 match_chiffres = last_4 in tous_les_textes
+
                 
                 # 4. SÉCURITÉ TEMPORELLE (STRICTE 10 MIN)
                 sync_ok, heure_trouvee = True, "N/A"
@@ -204,3 +211,4 @@ with onglet_actif[1]:
         else:
 
             st.info("Le registre est actuellement vide.")
+
