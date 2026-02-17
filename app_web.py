@@ -93,7 +93,7 @@ with onglet_actif[0]:
         tous_les_textes = ""
         lecture_reussie = True
         
-        for f in fichiers_a_analyser:
+                for f in fichiers_a_analyser:
             try:
                 img_np = np.array(Image.open(f))
                 res_ocr = reader.readtext(img_np)
@@ -211,4 +211,5 @@ with onglet_actif[1]:
         else:
 
             st.info("Le registre est actuellement vide.")
+
 
