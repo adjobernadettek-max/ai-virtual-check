@@ -89,12 +89,27 @@ with onglet_actif[0]:
                 # 1. Signature de l'image
                 hash_actuel = generer_empreinte_image(fichiers_a_analyser[0])
                 
-                # 2. Analyse OCR
-                tous_les_textes = ""
-                for f in fichiers_a_analyser:
-                    img_np = np.array(Image.open(f))
-                    res_ocr = reader.readtext(img_np)
-                    tous_les_textes += " " + " ".join([r[1].upper() for r in res_ocr])
+               # 2. Analyse OCR avec sécurité anti-flou
+        tous_les_textes = ""
+        lecture_reussie = True
+        
+        for f in fichiers_a_analyser:
+            try:
+                img_np = np.array(Image.open(f))
+                res_ocr = reader.readtext(img_np)
+                
+                if not res_ocr: # Si l'IA ne voit aucun texte
+                    lecture_reussie = False
+                    break
+                    
+                tous_les_textes += " " + " ".join([r[1].upper() for r in res_ocr])
+            except Exception: # Si la photo fait bugger le moteur
+                lecture_reussie = False
+                break
+
+        if not lecture_reussie or tous_les_textes.strip() == "":
+            st.error("⚠️ Impossible de lire les données. La photo est trop floue ou mal cadrée.")
+            st.stop()
                 
                 # 3. Validation Nom et Chiffres
                 match_nom = nom_complet in tous_les_textes
@@ -187,4 +202,5 @@ with onglet_actif[1]:
             
             st.download_button("📥 EXPORTER LE REGISTRE (CSV)", df.to_csv(index=False), "registre.csv", "text/csv")
         else:
+
             st.info("Le registre est actuellement vide.")
