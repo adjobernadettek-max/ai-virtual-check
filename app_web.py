@@ -61,13 +61,13 @@ onglet_actif = st.tabs(["👤 INTERFACE CLIENT", "🏢 ESPACE ENTREPRISE"])
 # ==========================================
 with onglet_actif[0]:
     col1, col2 = st.columns([1, 1])
-    
+   
     with col1:
         st.subheader("📋 Formulaire de Certification")
         type_support = st.selectbox("TYPE DE SUPPORT", ["Carte Virtuelle", "Carte Physique"])
         nom_complet = st.text_input("NOM COMPLET DU TITULAIRE", "").upper().strip()
         num_complet = st.text_input("NUMÉRO DE CARTE (16 CHIFFRES)", max_chars=19)
-        
+       
         bin_6 = num_complet[:6] if num_complet else ""
         last_4 = num_complet[-4:] if num_complet else ""
 
@@ -85,43 +85,36 @@ with onglet_actif[0]:
     if st.button("🚀 LANCER LA VÉRIFICATION"):
         if len(fichiers_a_analyser) > 0 and nom_complet and last_4:
             with st.status("Analyse OCR et Sécurité temporelle...", expanded=True) as status:
-                
+               
                 # 1. Signature de l'image
                 hash_actuel = generer_empreinte_image(fichiers_a_analyser[0])
-                
-               # 2. Analyse OCR avec sécurité anti-flou
-        tous_les_textes = ""
-        lecture_reussie = True
-        
+               
+                # 2. Analyse OCR avec sécurité anti-flou
+                tous_les_textes = ""
+                lecture_reussie = True
+       
                 for f in fichiers_a_analyser:
-            try:
-                img_np = np.array(Image.open(f))
-                res_ocr = reader.readtext(img_np)
-                
-                if not res_ocr: # Si l'IA ne voit aucun texte
-                    lecture_reussie = False
-                    break
-                    
-                tous_les_textes += " " + " ".join([r[1].upper() for r in res_ocr])
-            except Exception: # Si la photo fait bugger le moteur
-                lecture_reussie = False
-                break
+                    try:
+                        img_np = np.array(Image.open(f))
+                        res_ocr = reader.readtext(img_np)
+               
+                        if not res_ocr:
+                            lecture_reussie = False
+                            break
+               
+                        tous_les_textes += " " + " ".join([r[1].upper() for r in res_ocr])
+                    except Exception:
+                        lecture_reussie = False
+                        break
 
-        if not lecture_reussie or tous_les_textes.strip() == "":
-            st.error("⚠️ Impossible de lire les données. La photo est trop floue ou mal cadrée.")
-            st.stop()
-                
-               # 3. Validation Nom et Chiffres (Sécurisée)
-        match_nom = False
-        match_chiffres = False
-        
-        if tous_les_textes.strip():
-            if nom_complet:
-                match_nom = nom_complet in tous_les_textes
-            if last_4:
-                match_chiffres = last_4 in tous_les_textes
+                if not lecture_reussie or not tous_les_textes.strip():
+                    st.error("⚠️ Impossible de lire les données. La photo est trop floue ou mal cadrée.")
+                    st.stop()
 
-                
+                # 3. Validation Nom et Chiffres
+                match_nom = nom_complet in tous_les_textes if nom_complet else False
+                match_chiffres = last_4 in tous_les_textes if last_4 else False
+       
                 # 4. SÉCURITÉ TEMPORELLE (STRICTE 10 MIN)
                 sync_ok, heure_trouvee = True, "N/A"
                 if type_support == "Carte Virtuelle":
@@ -141,13 +134,13 @@ with onglet_actif[0]:
                 # RÉCUPÉRATION BANQUE
                 banque_info = check_bank_database(bin_6)
                 nom_b = banque_info.get('bank', {}).get('name', 'INCONNUE') if banque_info else "INCONNUE"
-                
+               
                 st.balloons()
                 st.success("✅ AUDIT VALIDÉ : CARTE AUTHENTIQUE")
-                
+               
                 # Enregistrement registre
                 enregistrer_dans_registre(nom_complet, type_support, nom_b, hash_actuel)
-                
+               
                 # GÉNÉRATION DU CERTIFICAT (FILIGRANE + TEXTE GRAS)
                 cert = Image.new('RGB', (1000, 600), color=(255, 255, 255))
                 d = ImageDraw.Draw(cert)
@@ -166,7 +159,7 @@ with onglet_actif[0]:
                     for o in range(3): draw.text((pos[0]+o, pos[1]), text, fill=(0, 0, 0))
 
                 draw_big(d, (250, 40), "CERTIFICAT D'AUTHENTICITÉ")
-                
+               
                 y_p = 180
                 lignes = [
                     f"TITULAIRE : {nom_complet}",
@@ -178,7 +171,7 @@ with onglet_actif[0]:
                 for line in lignes:
                     draw_big(d, (80, y_p), line)
                     y_p += 85
-                
+               
                 qr = qrcode.make(f"SECURE-{hash_actuel[:15]}").resize((180, 180))
                 cert.paste(qr, (780, 380))
                 st.image(cert)
@@ -200,16 +193,13 @@ with onglet_actif[0]:
 with onglet_actif[1]:
     st.header("🏢 Accès Administrateur")
     code = st.text_input("ENTREZ LE CODE D'ACCÈS", type="password")
-    
+   
     if code == "ADMIN123":
         if os.path.exists("registre_securise.csv"):
             st.subheader("📜 Registre des Audits")
             df = pd.read_csv("registre_securise.csv")
             st.dataframe(df, use_container_width=True)
-            
+           
             st.download_button("📥 EXPORTER LE REGISTRE (CSV)", df.to_csv(index=False), "registre.csv", "text/csv")
         else:
-
             st.info("Le registre est actuellement vide.")
-
-
