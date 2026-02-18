@@ -101,8 +101,10 @@ with onglet_actif[0]:
                         if not res_ocr:
                             lecture_reussie = False
                             break
-               
+                        
+                        # Ajout du texte UNIQUEMENT si res_ocr n'est pas vide
                         tous_les_textes += " " + " ".join([r[1].upper() for r in res_ocr])
+                        
                     except Exception:
                         lecture_reussie = False
                         break
