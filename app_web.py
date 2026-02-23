@@ -12,239 +12,170 @@ import re
 import requests
 import uuid
 
-# --- SÉCURITÉ 1 : CALCUL MATHÉMATIQUE (LUHN) ---
-def check_luhn(num_card):
-    num_card = "".join(filter(str.isdigit, str(num_card)))
-    if not num_card or len(num_card) < 13:
-        return False
-    n_sum = 0
-    is_second = False
-    for i in range(len(num_card) - 1, -1, -1):
-        d = int(num_card[i])
-        if is_second:
-            d = d * 2
-            if d > 9: d = d - 9
-        n_sum += d
-        is_second = not is_second
-    return n_sum % 10 == 0
+# --- 1. FONCTIONS DE SÉCURITÉ MATHÉMATIQUE ---
+def check_luhn(n):
+    r = [int(d) for d in str(n) if d.isdigit()]
+    if not r: return False
+    return sum(r[-1::-2] + [sum(divmod(d * 2, 10)) for d in r[-2::-2]]) % 10 == 0
 
-# --- SÉCURITÉ 2 : VÉRIFICATION BANQUE (BIN) ---
 def check_bank_database(bin_6):
     try:
         response = requests.get(f"https://lookup.binlist.net/{bin_6}", timeout=5)
         if response.status_code == 200:
             data = response.json()
-            bank_name = data.get('bank', {}).get('name', 'Banque Inconnue')
+            bank = data.get('bank', {}).get('name', 'Banque Inconnue')
             country = data.get('country', {}).get('name', 'ID')
-            return True, f"{bank_name} ({country})"
+            return True, f"{bank} ({country})"
         return False, "Banque Non Répertoriée"
-    except:
-        return True, "Vérification Offline"
+    except: return True, "Vérification Offline"
 
-# --- SÉCURITÉ 3 : ANTI-PHOTOSHOP (METADATA) ---
-def detecter_retouche(image_file):
+# --- 2. ANALYSE D'IMAGE AVANCÉE ---
+def detecter_retouche(file):
     try:
-        img = Image.open(image_file)
-        info = img.info
+        img = Image.open(file)
         logiciels = ["photoshop", "gimp", "canva", "picsart", "adobe", "editor", "paint"]
-        for key, value in info.items():
-            if any(l in str(value).lower() for l in logiciels):
-                return False
+        for key, value in img.info.items():
+            if any(l in str(value).lower() for l in logiciels): return False
         return True
-    except:
-        return True
+    except: return True
 
-# --- SÉCURITÉ 4 : ANTI-DOUBLON (SIGNATURE UNIQUE) ---
 def verifier_doublon(hash_actuel):
     DB_FILE = "registre_securise.csv"
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
-        if "HASH_IMAGE" in df.columns:
-            if hash_actuel in df["HASH_IMAGE"].values:
-                return False
+        if hash_actuel in df["HASH_IMAGE"].values: return False
     return True
 
-# --- SÉCURITÉ 5 : ANTI-PHOTO D'ÉCRAN (TEXTURE) ---
-def analyser_texture(image_file):
+def analyser_texture(file):
     try:
-        img = Image.open(image_file).convert('L')
-        stat = ImageStat.Stat(img)
-        if stat.stddev[0] < 15: 
-            return False
+        img = Image.open(file).convert('L')
+        if ImageStat.Stat(img).stddev[0] < 15: return False
         return True
-    except:
-        return True
+    except: return True
 
-# --- SÉCURITÉ 6 : ANTI-COLLAGE (COHÉRENCE COULEUR) ---
-def analyser_coherence_couleur(image_file):
+def analyser_bruit_compression(file):
     try:
-        img = Image.open(image_file)
-        couleurs = img.getcolors(maxcolors=1000000)
-        if couleurs is not None and len(couleurs) < 100: 
-            return False 
-        return True
-    except:
-        return True
-
-# --- SÉCURITÉ 7 : ORIGINE DU FICHIER (EXIF) ---
-def analyser_origine_image(image_file):
-    try:
-        img = Image.open(image_file)
-        exif_data = img._getexif()
-        if not exif_data and img.format not in ["PNG", "JPEG"]:
-            return False
-        return True
-    except:
-        return True
-
-# --- SÉCURITÉ 8 : ANALYSE DU BRUIT DE COMPRESSION (ELA SIMULÉ) ---
-def analyser_bruit_compression(image_file):
-    try:
-        img = Image.open(image_file).convert('RGB')
-        # On simule une analyse d'erreur de niveau (ELA)
-        # On compare l'image avec une version compressée d'elle-même
+        img = Image.open(file).convert('RGB')
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=90)
         buf.seek(0)
         img_comp = Image.open(buf)
         diff = ImageChops.difference(img, img_comp)
-        stat = ImageStat.Stat(diff)
-        # Si la différence est trop élevée, cela indique une manipulation de compression
-        if stat.mean[0] > 10: 
-            return False
+        if ImageStat.Stat(diff).mean[0] > 10: return False
         return True
-    except:
-        return True
+    except: return True
 
-# --- FONCTIONS SYSTÈME ---
-def generer_empreinte_image(image_file):
-    return hashlib.sha256(image_file.getvalue()).hexdigest()
+def analyser_origine_image(file):
+    try:
+        img = Image.open(file)
+        return True if (img._getexif() or img.format in ["PNG", "JPEG"]) else False
+    except: return True
+
+# --- 3. SYSTÈME ET REGISTRE ---
+def generer_empreinte_image(file):
+    return hashlib.sha256(file.getvalue()).hexdigest()
 
 def enregistrer_dans_registre(nom, support, banque, hash_img):
     DB_FILE = "registre_securise.csv"
-    nouvelle_entree = pd.DataFrame([{
-        "DATE_HEURE": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "TITULAIRE": nom,
-        "SUPPORT": support,
-        "BANQUE": banque,
-        "HASH_IMAGE": hash_img,
-        "ID_CERTIFICAT": str(uuid.uuid4())[:12].upper()
-    }])
-    if not os.path.isfile(DB_FILE):
-        nouvelle_entree.to_csv(DB_FILE, index=False)
-    else:
-        nouvelle_entree.to_csv(DB_FILE, mode='a', header=False, index=False)
+    entree = pd.DataFrame([{"DATE": datetime.now().strftime("%d/%m/%Y %H:%M"), "TITULAIRE": nom, "SUPPORT": support, "BANQUE": banque, "HASH_IMAGE": hash_img, "ID_CERT": str(uuid.uuid4())[:8].upper()}])
+    if not os.path.isfile(DB_FILE): entree.to_csv(DB_FILE, index=False)
+    else: entree.to_csv(DB_FILE, mode='a', header=False, index=False)
 
-# --- CONFIGURATION INTERFACE ---
-st.set_page_config(page_title="SYSTÈME D'AUDIT IA V8.0", layout="wide")
-
+# --- 4. INTERFACE STREAMLIT ---
+st.set_page_config(page_title="FBS AUDIT IA V9.0", layout="wide")
 @st.cache_resource
-def charger_lecteur():
-    return easyocr.Reader(['en'], gpu=False)
+def load_ocr(): return easyocr.Reader(['en'], gpu=False)
+lecteur = load_ocr()
 
-lecteur = charger_lecteur()
-
-st.title("🔐 Terminal d'Audit IA - FBS Forteresse V8.0")
+st.title("🔐 Terminal d'Audit IA - FBS Forteresse V9.0")
 st.markdown("---")
 
-onglet_actif = st.tabs(["👤 INTERFACE DE CERTIFICATION", "🏢 ADMINISTRATION FBS"])
+tab1, tab2 = st.tabs(["👤 CERTIFICATION", "🏢 ADMIN"])
 
-with onglet_actif[0]:
-    col1, col2 = st.columns([1, 1])
+with tab1:
+    col1, col2 = st.columns(2)
     with col1:
-        st.subheader("📋 Informations du Titulaire")
-        type_support = st.selectbox("TYPE DE SUPPORT", ["Carte Physique", "Carte Virtuelle"])
-        nom_complet = st.text_input("NOM COMPLET SUR LA CARTE", "").upper().strip()
-        num_complet = st.text_input("NUMÉRO DE CARTE (16 CHIFFRES)", max_chars=16).replace(" ", "")
+        st.subheader("📋 Informations")
+        type_s = st.selectbox("TYPE DE SUPPORT", ["Carte Physique", "Carte Virtuelle"])
+        nom_c = st.text_input("NOM COMPLET SUR LA CARTE").upper().strip()
+        num_c = st.text_input("NUMÉRO DE CARTE (16 CHIFFRES)", max_chars=16).replace(" ", "")
 
-    f = st.file_uploader("Preuve Image (Screenshot ou Photo)", type=['png', 'jpg', 'jpeg'])
+    st.subheader("📸 Preuves Numériques")
+    if type_s == "Carte Physique":
+        c_r, c_v = st.columns(2)
+        f_recto = c_r.file_uploader("PHOTO RECTO", type=['png', 'jpg', 'jpeg'])
+        f_verso = c_v.file_uploader("PHOTO VERSO", type=['png', 'jpg', 'jpeg'])
+        f_list = [f_recto, f_verso] if (f_recto and f_verso) else []
+    else:
+        f_virt = st.file_uploader("SCREENSHOT CARTE VIRTUELLE", type=['png', 'jpg', 'jpeg'])
+        f_list = [f_virt] if f_virt else []
 
     if st.button("🚀 LANCER L'AUDIT DE SÉCURITÉ"):
-        if f and nom_complet and len(num_complet) == 16:
-            with st.status("Audit des 8 couches de sécurité FBS...", expanded=True) as status:
-                hash_actuel = generer_empreinte_image(f)
-                img_pil = Image.open(f).convert('RGB')
-                img_np = np.array(img_pil)
-                res_ocr = lecteur.readtext(img_np)
-                tous_les_textes = " ".join([r[1].upper() for r in res_ocr])
+        if f_list and nom_c and len(num_c) == 16:
+            with st.status("Analyse des 9 couches de sécurité...", expanded=True) as status:
+                tout_texte = ""
+                img_checks = True
+                h_img = generer_empreinte_image(f_list[0])
+                
+                for f in f_list:
+                    img_p = Image.open(f).convert('RGB')
+                    res = lecteur.readtext(np.array(img_p))
+                    tout_texte += " " + " ".join([r[1].upper() for r in res])
+                    if not (detecter_retouche(f) and analyser_texture(f) and analyser_bruit_compression(f) and analyser_origine_image(f)):
+                        img_checks = False
 
-                # Vérifications 1-3 (Nom, Numéro, Heure)
-                match_16 = num_complet in tous_les_textes.replace(" ", "")
-                match_nom = nom_complet in tous_les_textes
-                sync_ok, heure_trouvee = True, "N/A"
-                motif = re.search(r'([0-1]?[0-9]|2[0-3])[:\.\sH]([0-5][0-9])', tous_les_textes)
+                # Validations logiques
+                luhn_ok = check_luhn(num_c)
+                bin_ok, info_b = check_bank_database(num_c[:6])
+                doublon_ok = verifier_doublon(h_img)
+                match_data = (nom_c in tout_texte) and (num_c in tout_texte.replace(" ", ""))
+                
+                # Heure < 10min
+                sync_ok, h_trouvee = False, "N/A"
+                motif = re.search(r'([0-1]?[0-9]|2[0-3])[:\.\sH]([0-5][0-9])', tout_texte)
                 if motif:
                     h, m = int(motif.group(1)), int(motif.group(2))
-                    heure_trouvee = f"{h:02d}:{m:02d}"
-                    diff = abs((datetime.now().hour * 60 + datetime.now().minute) - (h * 60 + m))
-                    if diff > 10: sync_ok = False
-                else: sync_ok = False
-                
-                # Vérifications 4-8
-                luhn_ok = check_luhn(num_complet)
-                bin_ok, info_banque = check_bank_database(num_complet[:6])
-                original_ok = detecter_retouche(f)
-                jamais_vu_ok = verifier_doublon(hash_actuel)
-                texture_ok = analyser_texture(f)
-                coherence_ok = analyser_coherence_couleur(f)
-                origine_ok = analyser_origine_image(f)
-                bruit_ok = analyser_bruit_compression(f)
+                    h_trouvee = f"{h:02d}:{m:02d}"
+                    if abs((datetime.now().hour * 60 + datetime.now().minute) - (h * 60 + m)) <= 10: sync_ok = True
 
-                status.update(label="Audit complet terminé", state="complete")
+                status.update(label="Audit terminé", state="complete")
 
-            # --- DÉCISION FINALE (8 CONDITIONS) ---
-            if (match_nom and match_16 and sync_ok and luhn_ok and 
-                bin_ok and original_ok and jamais_vu_ok and 
-                texture_ok and coherence_ok and origine_ok and bruit_ok):
-                
+            if match_data and sync_ok and luhn_ok and bin_ok and img_checks and doublon_ok:
                 st.balloons()
-                st.success(f"✅ AUDIT VALIDÉ : Carte {info_banque} certifiée conforme.")
-                enregistrer_dans_registre(nom_complet, type_support, info_banque, hash_actuel)
+                st.success(f"✅ AUDIT VALIDÉ : {info_b}")
+                enregistrer_dans_registre(nom_c, type_s, info_b, h_img)
 
-                # --- GÉNÉRATION CERTIFICAT ---
-                cert = Image.new('RGB', (1200, 800), color=(255, 255, 255))
+                # CERTIFICAT DESIGN
+                cert = Image.new('RGB', (1200, 800), (255, 255, 255))
                 d = ImageDraw.Draw(cert)
                 d.rectangle([20, 20, 1180, 780], outline=(0, 100, 0), width=20)
-                d.rectangle([40, 40, 1160, 760], outline=(0, 100, 0), width=2)
                 
+                # FILIGRANE
                 fili = Image.new('RGBA', (1200, 800), (0,0,0,0))
                 ImageDraw.Draw(fili).text((250, 350), "AUDIT OFFICIEL FBS", fill=(230, 230, 230, 120))
                 cert.paste(fili.rotate(30), (0,0), fili.rotate(30))
 
-                def draw_bold(draw, pos, text):
-                    for off in range(3): draw.text((pos[0]+off, pos[1]), text, fill=(0,0,0))
-
-                draw_bold(d, (350, 70), "--- CERTIFICAT D'AUTHENTICITÉ IA ---")
-                
-                y = 230
-                infos = [f"TITULAIRE : {nom_complet}", f"BANQUE : {info_banque}", f"SÉCURITÉ : NIVEAU 8 (ULTRASONIC)", f"HEURE : {heure_trouvee}", f"EMPREINTE : {hash_actuel[:20]}"]
-                for line in infos:
-                    draw_bold(d, (100, y), line)
+                y = 200
+                for line in [f"TITULAIRE : {nom_c}", f"BANQUE : {info_b}", "SÉCURITÉ : V9.0 (STRICT)", f"HEURE : {h_trouvee}"]:
+                    d.text((100, y), line, fill=(0,0,0))
                     y += 80
 
-                qr = qrcode.make(f"FBS-V8-{hash_actuel[:10]}").resize((250, 250)).convert('RGB')
-                cert.paste(qr, (880, 500))
-
+                qr = qrcode.make(f"FBS-V9-{h_img[:10]}").resize((200, 200)).convert('RGB')
+                cert.paste(qr, (900, 550))
                 st.image(cert, use_container_width=True)
+                
                 buf = io.BytesIO()
                 cert.save(buf, format="PNG")
-                st.download_button("📥 TÉLÉCHARGER LE CERTIFICAT V8", buf.getvalue(), f"Audit_V8_{nom_complet}.png")
-            
+                st.download_button("📥 TÉLÉCHARGER LE CERTIFICAT", buf.getvalue(), f"Audit_{nom_c}.png")
             else:
-                st.error("❌ ÉCHEC CRITIQUE : FRAUDE DÉTECTÉE")
-                if not bruit_ok: st.warning("🚨 COMPRESSION : Image ré-enregistrée ou modifiée plusieurs fois.")
-                if not origine_ok: st.warning("🚨 SOURCE : Fichier non-standard ou corrompu.")
-                if not coherence_ok: st.warning("🚨 PIXELS : Incohérence chromatique détectée.")
-                if not original_ok: st.warning("🚨 LOGICIEL : Modification par éditeur tiers.")
-                if not jamais_vu_ok: st.warning("🚨 DOUBLE USAGE : Image déjà existante.")
-                if not luhn_ok: st.warning("🚨 MATHS : Numéro de carte invalide.")
-                if not sync_ok: st.warning(f"🚨 TEMPS : Screenshot expiré ({heure_trouvee}).")
-                if not (match_nom and match_16): st.warning("🚨 OCR : Les données ne correspondent pas.")
+                st.error("❌ ÉCHEC DE L'AUDIT")
+                if not doublon_ok: st.warning("🚨 DOUBLE USAGE : Cette image est déjà enregistrée.")
+                if not sync_ok: st.warning(f"🚨 HEURE : Screenshot expiré ou non détecté ({h_trouvee}).")
+                if not match_data: st.warning("🚨 OCR : Les données de la carte ne correspondent pas au formulaire.")
+                if not img_checks: st.warning("🚨 FRAUDE IMAGE : Texture ou compression suspecte.")
         else:
-            st.warning("⚠️ Veuillez remplir tous les champs.")
+            st.warning("⚠️ Données ou images manquantes (Recto/Verso obligatoires pour Physique).")
 
-with onglet_actif[1]:
-    st.header("🏢 Administration")
+with tab2:
     if st.text_input("CODE ADMIN", type="password") == "ADMIN123":
-        if os.path.exists("registre_securise.csv"):
-            st.dataframe(pd.read_csv("registre_securise.csv"), use_container_width=True)
+        if os.path.exists("registre_securise.csv"): st.dataframe(pd.read_csv("registre_securise.csv"))
