@@ -246,3 +246,4 @@ with onglet_actif[1]:
         else:
             st.info("Le registre est actuellement vide.")
 
+
