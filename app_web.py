@@ -11,19 +11,13 @@ import io
 import re
 import requests
 import uuid
-def check_luhn(card_number):
-    card_number = "".join(filter(str.isdigit, str(card_number)))
-    if not card_number or len(card_number) < 13: return False
-    n_sum = 0
-    is_second = False
-    for i in range(len(card_number) - 1, -1, -1):
-        d = int(card_number[i])
-        if is_second:
-            d = d * 2
-            if d > 9: d = d - 9
-        n_sum += d
-        is_second = not is_second
-    return n_sum % 10 == 0
+# --- CALCUL DE SÉCURITÉ ---
+        def check_luhn(n):
+            r = [int(d) for d in str(n) if d.isdigit()]
+            if not r: return False
+            return sum(r[-1::-2] + [sum(divmod(d * 2, 10)) for d in r[-2::-2]]) % 10 == 0
+
+        luhn_ok = check_luhn(chiffres_extraits)
 
 # --- 1. FONCTIONS DE SÉCURITÉ ET CRYPTOGRAPHIE ---
 def generer_empreinte_image(image_file):
@@ -157,27 +151,25 @@ with onglet_actif[0]:
         luhn_ok = check_luhn(chiffres_extraits)
 
         # --- 2. CONDITION DE VALIDATION FINALE ---
+        # --- DÉBUT DE LA VÉRIFICATION (ALIGNEMENT STRICT) ---
         if match_nom and match_16_chiffres and sync_ok and luhn_ok:
             st.balloons()
             st.success("✅ AUDIT VALIDÉ : TOUS LES CRITÈRES DE SÉCURITÉ SONT REMPLIS")
             
+            # Ton code pour enregistrer
             enregistrer_dans_registre(nom_complet, type_support, nom_b, hash_actuel)
 
-            # --- GÉNÉRATION DU CERTIFICAT PRO ---
+            # --- GÉNÉRATION DU CERTIFICAT (TON MODÈLE) ---
             cert = Image.new('RGB', (1200, 800), color=(255, 255, 255))
             d = ImageDraw.Draw(cert)
-            
-            # Cadre Double Vert Forêt
             d.rectangle([20, 20, 1180, 780], outline=(0, 100, 0), width=20)
             d.rectangle([40, 40, 1160, 760], outline=(0, 100, 0), width=2)
             
-            # Filigrane
             watermark = Image.new('RGBA', (1200, 800), (0,0,0,0))
             w_draw = ImageDraw.Draw(watermark)
             w_draw.text((250, 350), "AUDIT OFFICIEL FBS", fill=(230, 230, 230, 120))
             cert.paste(watermark.rotate(30), (0,0), watermark.rotate(30))
 
-            # Fonction Texte Gras
             def draw_bold(draw, pos, text, fill=(0,0,0)):
                 for off in range(3):
                     draw.text((pos[0]+off, pos[1]), text, fill=fill)
@@ -194,20 +186,16 @@ with onglet_actif[0]:
                 f"HORODATAGE CAPTURE : {heure_trouvee}",
                 f"SIGNATURE HASH : {hash_actuel[:24]}"
             ]
-
             for line in lignes:
                 draw_bold(d, (100, y_p), line)
                 y_p += 80
 
-            # QR Code de vérification
             import qrcode
             qr_img = qrcode.make(f"SECURE-FBS-{hash_actuel[:15]}").resize((250, 250)).convert('RGB')
             cert.paste(qr_img, (880, 500))
 
-            # Affichage final
             st.image(cert, caption="Certificat Infalsifiable Généré par l'IA", use_container_width=True)
 
-            # Bouton de téléchargement
             import io
             buf = io.BytesIO()
             cert.save(buf, format="PNG")
@@ -218,11 +206,11 @@ with onglet_actif[0]:
                 mime="image/png"
             )
 
-        # --- 3. GESTION DES ERREURS (TON ANCIEN CODE AMÉLIORÉ) ---
+        # --- LE ELSE (PARFAITEMENT ALIGNÉ SOUS LE IF) ---
         else:
             st.error("❌ ÉCHEC CRITIQUE DE L'AUDIT")
             if not luhn_ok:
-                st.warning("🚨 ALERTE : Fraude détectée sur le numéro (Échec calcul Luhn).")
+                st.warning("🚨 ALERTE : Fraude détectée sur le numéro (Echec calcul Luhn).")
             if not match_16_chiffres:
                 st.warning("ALERTE : Les 16 chiffres ne correspondent pas à l'image.")
             if not match_nom:
@@ -245,5 +233,6 @@ with onglet_actif[1]:
             st.download_button("📥 EXPORTER LE REGISTRE COMPLET", df.to_csv(index=False), "registre_fbs.csv", "text/csv")
         else:
             st.info("Le registre est actuellement vide.")
+
 
 
