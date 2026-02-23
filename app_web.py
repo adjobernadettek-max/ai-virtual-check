@@ -12,7 +12,7 @@ import re
 import requests
 import uuid
 # --- CALCUL DE SÉCURITÉ ---
-        def check_luhn(n):
+def check_luhn(n):
             r = [int(d) for d in str(n) if d.isdigit()]
             if not r: return False
             return sum(r[-1::-2] + [sum(divmod(d * 2, 10)) for d in r[-2::-2]]) % 10 == 0
@@ -233,6 +233,7 @@ with onglet_actif[1]:
             st.download_button("📥 EXPORTER LE REGISTRE COMPLET", df.to_csv(index=False), "registre_fbs.csv", "text/csv")
         else:
             st.info("Le registre est actuellement vide.")
+
 
 
 
