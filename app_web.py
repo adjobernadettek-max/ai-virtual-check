@@ -1,6 +1,6 @@
 import streamlit as st
 import easyocr
-from PIL import Image, ImageDraw, ImageFont, ImageStat
+from PIL import Image, ImageDraw, ImageFont, ImageStat, ImageChops
 import qrcode
 from datetime import datetime
 import numpy as np
@@ -86,14 +86,32 @@ def analyser_coherence_couleur(image_file):
     except:
         return True
 
-# --- SÉCURITÉ 7 : ORIGINE DU FICHIER (ANALYSE EXIF/SOURCE) ---
+# --- SÉCURITÉ 7 : ORIGINE DU FICHIER (EXIF) ---
 def analyser_origine_image(image_file):
     try:
         img = Image.open(image_file)
         exif_data = img._getexif()
-        # Si c'est un screenshot ou une photo réelle, l'image possède une structure d'en-tête spécifique
         if not exif_data and img.format not in ["PNG", "JPEG"]:
-            return False # Format suspect ou converti illégalement
+            return False
+        return True
+    except:
+        return True
+
+# --- SÉCURITÉ 8 : ANALYSE DU BRUIT DE COMPRESSION (ELA SIMULÉ) ---
+def analyser_bruit_compression(image_file):
+    try:
+        img = Image.open(image_file).convert('RGB')
+        # On simule une analyse d'erreur de niveau (ELA)
+        # On compare l'image avec une version compressée d'elle-même
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        buf.seek(0)
+        img_comp = Image.open(buf)
+        diff = ImageChops.difference(img, img_comp)
+        stat = ImageStat.Stat(diff)
+        # Si la différence est trop élevée, cela indique une manipulation de compression
+        if stat.mean[0] > 10: 
+            return False
         return True
     except:
         return True
@@ -118,7 +136,7 @@ def enregistrer_dans_registre(nom, support, banque, hash_img):
         nouvelle_entree.to_csv(DB_FILE, mode='a', header=False, index=False)
 
 # --- CONFIGURATION INTERFACE ---
-st.set_page_config(page_title="SYSTÈME D'AUDIT IA V7.0", layout="wide")
+st.set_page_config(page_title="SYSTÈME D'AUDIT IA V8.0", layout="wide")
 
 @st.cache_resource
 def charger_lecteur():
@@ -126,7 +144,7 @@ def charger_lecteur():
 
 lecteur = charger_lecteur()
 
-st.title("🔐 Terminal d'Audit IA - FBS Forteresse V7.0")
+st.title("🔐 Terminal d'Audit IA - FBS Forteresse V8.0")
 st.markdown("---")
 
 onglet_actif = st.tabs(["👤 INTERFACE DE CERTIFICATION", "🏢 ADMINISTRATION FBS"])
@@ -143,20 +161,16 @@ with onglet_actif[0]:
 
     if st.button("🚀 LANCER L'AUDIT DE SÉCURITÉ"):
         if f and nom_complet and len(num_complet) == 16:
-            with st.status("Audit des 7 couches de sécurité FBS en cours...", expanded=True) as status:
-                # Signature
+            with st.status("Audit des 8 couches de sécurité FBS...", expanded=True) as status:
                 hash_actuel = generer_empreinte_image(f)
-                
-                # IA OCR
                 img_pil = Image.open(f).convert('RGB')
                 img_np = np.array(img_pil)
                 res_ocr = lecteur.readtext(img_np)
                 tous_les_textes = " ".join([r[1].upper() for r in res_ocr])
 
-                # Vérifications Classiques (Nom, Numéro, Heure)
+                # Vérifications 1-3 (Nom, Numéro, Heure)
                 match_16 = num_complet in tous_les_textes.replace(" ", "")
                 match_nom = nom_complet in tous_les_textes
-                
                 sync_ok, heure_trouvee = True, "N/A"
                 motif = re.search(r'([0-1]?[0-9]|2[0-3])[:\.\sH]([0-5][0-9])', tous_les_textes)
                 if motif:
@@ -166,7 +180,7 @@ with onglet_actif[0]:
                     if diff > 10: sync_ok = False
                 else: sync_ok = False
                 
-                # Vérifications Avancées (1 à 7)
+                # Vérifications 4-8
                 luhn_ok = check_luhn(num_complet)
                 bin_ok, info_banque = check_bank_database(num_complet[:6])
                 original_ok = detecter_retouche(f)
@@ -174,17 +188,17 @@ with onglet_actif[0]:
                 texture_ok = analyser_texture(f)
                 coherence_ok = analyser_coherence_couleur(f)
                 origine_ok = analyser_origine_image(f)
+                bruit_ok = analyser_bruit_compression(f)
 
-                status.update(label="Audit complet terminé - Analyse des résultats", state="complete")
+                status.update(label="Audit complet terminé", state="complete")
 
-            # --- DÉCISION FINALE (7 CONDITIONS) ---
+            # --- DÉCISION FINALE (8 CONDITIONS) ---
             if (match_nom and match_16 and sync_ok and luhn_ok and 
                 bin_ok and original_ok and jamais_vu_ok and 
-                texture_ok and coherence_ok and origine_ok):
+                texture_ok and coherence_ok and origine_ok and bruit_ok):
                 
                 st.balloons()
                 st.success(f"✅ AUDIT VALIDÉ : Carte {info_banque} certifiée conforme.")
-                
                 enregistrer_dans_registre(nom_complet, type_support, info_banque, hash_actuel)
 
                 # --- GÉNÉRATION CERTIFICAT ---
@@ -193,7 +207,6 @@ with onglet_actif[0]:
                 d.rectangle([20, 20, 1180, 780], outline=(0, 100, 0), width=20)
                 d.rectangle([40, 40, 1160, 760], outline=(0, 100, 0), width=2)
                 
-                # FILIGRANE (PRÉSERVÉ)
                 fili = Image.new('RGBA', (1200, 800), (0,0,0,0))
                 ImageDraw.Draw(fili).text((250, 350), "AUDIT OFFICIEL FBS", fill=(230, 230, 230, 120))
                 cert.paste(fili.rotate(30), (0,0), fili.rotate(30))
@@ -204,29 +217,29 @@ with onglet_actif[0]:
                 draw_bold(d, (350, 70), "--- CERTIFICAT D'AUTHENTICITÉ IA ---")
                 
                 y = 230
-                infos = [f"TITULAIRE : {nom_complet}", f"BANQUE : {info_banque}", f"SÉCURITÉ : NIVEAU 7 (MAXIMUM)", f"HEURE : {heure_trouvee}", f"EMPREINTE : {hash_actuel[:20]}"]
+                infos = [f"TITULAIRE : {nom_complet}", f"BANQUE : {info_banque}", f"SÉCURITÉ : NIVEAU 8 (ULTRASONIC)", f"HEURE : {heure_trouvee}", f"EMPREINTE : {hash_actuel[:20]}"]
                 for line in infos:
                     draw_bold(d, (100, y), line)
                     y += 80
 
-                qr = qrcode.make(f"FBS-V7-{hash_actuel[:10]}").resize((250, 250)).convert('RGB')
+                qr = qrcode.make(f"FBS-V8-{hash_actuel[:10]}").resize((250, 250)).convert('RGB')
                 cert.paste(qr, (880, 500))
 
                 st.image(cert, use_container_width=True)
                 buf = io.BytesIO()
                 cert.save(buf, format="PNG")
-                st.download_button("📥 TÉLÉCHARGER LE CERTIFICAT V7", buf.getvalue(), f"Audit_FBS_{nom_complet}.png")
+                st.download_button("📥 TÉLÉCHARGER LE CERTIFICAT V8", buf.getvalue(), f"Audit_V8_{nom_complet}.png")
             
             else:
-                st.error("❌ ÉCHEC CRITIQUE : L'IA A DÉTECTÉ UNE FRAUDE")
-                if not origine_ok: st.warning("🚨 SOURCE : Image suspecte (Metadata altérées ou fichier non-original).")
-                if not coherence_ok: st.warning("🚨 COLLAGE : Modification des pixels détectée (Deepfake).")
-                if not texture_ok: st.warning("🚨 TEXTURE : Image identifiée comme photo d'écran (Moire).")
-                if not original_ok: st.warning("🚨 LOGICIEL : Traces de montage détectées.")
-                if not jamais_vu_ok: st.warning("🚨 DOUBLON : Image déjà utilisée.")
+                st.error("❌ ÉCHEC CRITIQUE : FRAUDE DÉTECTÉE")
+                if not bruit_ok: st.warning("🚨 COMPRESSION : Image ré-enregistrée ou modifiée plusieurs fois.")
+                if not origine_ok: st.warning("🚨 SOURCE : Fichier non-standard ou corrompu.")
+                if not coherence_ok: st.warning("🚨 PIXELS : Incohérence chromatique détectée.")
+                if not original_ok: st.warning("🚨 LOGICIEL : Modification par éditeur tiers.")
+                if not jamais_vu_ok: st.warning("🚨 DOUBLE USAGE : Image déjà existante.")
                 if not luhn_ok: st.warning("🚨 MATHS : Numéro de carte invalide.")
                 if not sync_ok: st.warning(f"🚨 TEMPS : Screenshot expiré ({heure_trouvee}).")
-                if not (match_nom and match_16): st.warning("🚨 OCR : Les données de la photo ne correspondent pas au formulaire.")
+                if not (match_nom and match_16): st.warning("🚨 OCR : Les données ne correspondent pas.")
         else:
             st.warning("⚠️ Veuillez remplir tous les champs.")
 
