@@ -17,7 +17,7 @@ def check_luhn(n):
             if not r: return False
             return sum(r[-1::-2] + [sum(divmod(d * 2, 10)) for d in r[-2::-2]]) % 10 == 0
 
-        luhn_ok = check_luhn(chiffres_extraits)
+luhn_ok = check_luhn(chiffres_extraits)
 
 # --- 1. FONCTIONS DE SÉCURITÉ ET CRYPTOGRAPHIE ---
 def generer_empreinte_image(image_file):
@@ -233,6 +233,7 @@ with onglet_actif[1]:
             st.download_button("📥 EXPORTER LE REGISTRE COMPLET", df.to_csv(index=False), "registre_fbs.csv", "text/csv")
         else:
             st.info("Le registre est actuellement vide.")
+
 
 
 
